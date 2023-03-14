@@ -1,0 +1,58 @@
+#!/usr/bin/env sh
+
+BASH_LIB=bash.lib
+
+. ${BASH_LIB}
+
+
+if [[ $# != 2 ]]
+then
+     cat << EOF
+
+     Resets the admin username (including the user_login), password, and email for the WP instance in the current directory.
+
+     usage: ${SELF} <username> <password>
+
+EOF
+exit
+fi
+
+${WP} core is-installed --path=. > /dev/null
+
+if [[ $? == 1 ]]
+then
+     echo
+     echo The current directory does not contain a WordPress installation. Aborting...
+     echo
+     exit
+fi
+
+NEW_USER=${1}
+NEW_PASS=${2}
+NEW_EMAIL="YOUR EMAIL HERE"
+ID=1
+
+# get database table prefix
+DB_PREFIX=$(wp db prefix)
+
+# add test to ensure the current directory contains a wp installation
+
+sql="update ${DB_PREFIX}users set user_login='${NEW_USER}' where ID=1"
+
+echo
+echo Updating user info...
+echo ${WP} user update ${ID} --user_nicename=${NEW_USER} --display_name=${NEW_USER} --nickname=${NEW_USER} --user_pass=${NEW_PASS} --user_email=${NEW_EMAIL} --skip-email
+${WP} user update ${ID} --user_nicename=${NEW_USER} --display_name=${NEW_USER} --nickname=${NEW_USER} --user_pass=${NEW_PASS} --user_email=${NEW_EMAIL} --skip-email
+
+echo
+echo Updating user_login...
+echo ${WP} db query \"$sql\"
+${WP} db query "$sql"
+
+echo
+echo Getting user info for \"${NEW_USER}\" \(ID: ${ID}\)...
+echo ${WP} user list --include=${ID} --fields=user_login,display_name,user_email
+${WP} user list --include=${ID} --fields=user_login,display_name,user_email
+echo
+echo ...done.
+echo

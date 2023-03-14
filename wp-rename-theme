@@ -1,0 +1,74 @@
+#!/usr/bin/env sh
+
+SELF=${0##*/}
+
+if [[ $# != 2 ]]
+then
+	cat << EOF
+
+usage: ${SELF} <old directory> <new directory>
+
+EOF
+exit
+fi
+
+OLD_FOLDER_NAME=${1}
+NEW_FOLDER_NAME=${2}
+WP=$(which wp)
+MV=$(which mv)
+
+if [[ ${WP} == '' ]]
+then
+	echo
+	echo WP CLI \(https://wp-cli.org\) is not installed. Aborting...
+	echo
+	exit 3
+fi
+
+if [[ ! -d "${OLD_FOLDER_NAME}" ]]
+then
+	echo
+	echo The folder \"${OLD_FOLDER_NAME}\" does not exist. Aborting...
+	echo
+	exit 1
+fi
+
+if [[ -d "${NEW_FOLDER_NAME}" ]]
+then
+	echo
+	echo The destination folder \"${NEW_FOLDER_NAME}\" exists. Aborting...
+	echo
+	exit 2
+fi
+
+table_prefix=$(${WP} config get table_prefix)
+
+parent_theme=$(${WP} theme get ${OLD_FOLDER_NAME} --field=parent_theme)
+
+echo Renaming folder...
+echo ${MV} ${OLD_FOLDER_NAME} ${NEW_FOLDER_NAME}
+${MV} ${OLD_FOLDER_NAME} ${NEW_FOLDER_NAME}
+echo
+
+query1="update ${table_prefix}options set option_name = 'theme_mods_${NEW_FOLDER_NAME}' where option_name='theme_mods_${OLD_FOLDER_NAME}';"
+query2="update ${table_prefix}options set option_value = '${NEW_FOLDER_NAME}' where option_name='stylesheet';"
+
+echo Updating the database...
+echo ${WP} db query \"${query1}\"
+${WP} db query "${query1}"
+
+echo ${WP} db query \"${query2}\"
+${WP} db query "${query2}"
+
+# only applicable for a parent theme / a theme that is not a child theme
+if [[ ${parent_theme} == '' ]]
+then
+	query3="update ${table_prefix}options set option_value = '${NEW_FOLDER_NAME}' where option_name='template';"
+	echo ${WP} db query \"${query3}\"
+	${WP} db query "${query3}"
+fi
+
+echo
+
+echo ...done.
+echo

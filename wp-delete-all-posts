@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+
+WP=$(which wp)
+
+if [[ $# != 1 ]]
+then
+     cat << EOF
+
+     	usage: ${PROGRAM} <post_type>
+
+EOF
+exit
+fi
+
+POST_TYPE=$1
+
+# TODO: check if post type exists first!
+
+echo ${WP} post delete \$\(${WP} post list --post_type="${POST_TYPE}" --format=ids\) --force
+${WP} post delete $(${WP} post list --post_type="${POST_TYPE}" --format=ids) --force

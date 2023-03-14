@@ -1,0 +1,105 @@
+#!/usr/bin/env sh
+#
+# This program creates a backup of one site and restores it to a second site.
+# (It's basically a quick way to duplicate a site on the localhost. Note that
+# WordPress must be installed on the destination site.)
+#
+
+SELF=${0##*/}
+WP=$(which wp)
+CP=$(which cp)
+RM=$(which rm)
+CAT=$(which cat)
+TAIL=$(which tail)
+HEAD=$(which head)
+AWK=$(which awk)
+AI1WM_DIR=wp-content/ai1wm-backups
+BACKUP_DETAILS_FILE=/tmp/ai1wm.$$.txt
+WP_CONFIG=wp-config.php
+
+if [[ $# != 2 ]]
+then
+     cat << EOF
+
+usage: ${SELF} <origin_directory> <destination_directory>
+
+This program duplicates a WordPress site on the local host.
+
+Note: the destination site must already have WordPress installed.
+
+EOF
+exit 1
+fi
+
+ORIGIN_DIR=$1
+DESTINATION_DIR=$2
+
+if [[ ! -f ${ORIGIN_DIR}/${WP_CONFIG} ]]
+then
+     echo
+     echo ERROR: origin directory \"${ORIGIN_DIR}\" does not exist or is not a WordPress installation. Exiting.
+     echo
+     exit 2
+fi
+
+if [[ ! -f ${DESTINATION_DIR}/${WP_CONFIG} ]]
+then
+     echo
+     echo ERROR: destination directory \"${DESTINATION_DIR}\" does not exist or is not a WordPress installation. Exiting.
+     echo
+     exit 3
+fi
+
+ORIGIN_WP_AI1WM_DIR=${ORIGIN_DIR}/${AI1WM_DIR}
+DESTINATION_WP_AI1WM_DIR=${DESTINATION_DIR}/${AI1WM_DIR}
+
+echo
+echo Enabling All-In-One Migration plugins on ${ORIGIN_DIR}...
+echo ${WP} plugin activate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${ORIGIN_DIR}
+${WP} plugin activate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${ORIGIN_DIR}
+
+echo
+echo Enabling All-In-One Migration plugins on ${DESTINATION_DIR}...
+echo ${WP} plugin activate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${DESTINATION_DIR}
+${WP} plugin activate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${DESTINATION_DIR}
+
+echo
+echo Creating partial backup of ${ORIGIN_DIR}...
+echo ${WP} ai1wm backup --exclude-spam-comments --exclude-post-revisions --exclude-media --exclude-themes --exclude-inactive-themes --exclude-muplugins --exclude-plugins --exclude-inactive-plugins --exclude-cache --exclude-email-replace --path=${ORIGIN_DIR} \> ${BACKUP_DETAILS_FILE}
+${WP} ai1wm backup --exclude-spam-comments --exclude-post-revisions --exclude-media --exclude-themes --exclude-inactive-themes --exclude-muplugins --exclude-plugins --exclude-inactive-plugins --exclude-cache --exclude-email-replace --path=${ORIGIN_DIR} > ${BACKUP_DETAILS_FILE}
+
+${CAT} ${BACKUP_DETAILS_FILE}
+
+BACKUP_FILE=$(${CAT} ${BACKUP_DETAILS_FILE} | ${TAIL} -2 | ${HEAD} -1 | ${AWK} -F": " '{print $2}')
+
+echo
+echo Copying backup file ${BACKUP_FILE} to ${DESTINATION_WP_AI1WM_DIR}...
+echo ${CP} -v ${ORIGIN_WP_AI1WM_DIR}/${BACKUP_FILE} ${DESTINATION_WP_AI1WM_DIR}/
+${CP} -v ${ORIGIN_WP_AI1WM_DIR}/${BACKUP_FILE} ${DESTINATION_WP_AI1WM_DIR}/
+# FIXME: make sure copy process worked!
+
+echo
+echo Restoring ${BACKUP_FILE} in ${DESTINATION_DIR}...
+echo ${WP} ai1wm restore --yes ${BACKUP_FILE} --path=${DESTINATION_DIR}
+${WP} ai1wm restore --yes ${BACKUP_FILE} --path=${DESTINATION_DIR}
+# FIXME: make sure restore worked!
+
+echo
+echo Deactivating All-In-One Migration plugins on ${ORIGIN_DIR}...
+echo ${WP} plugin deactivate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${ORIGIN_DIR}
+${WP} plugin deactivate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${ORIGIN_DIR}
+
+echo
+echo Deactivating All-In-One Migration plugins on ${DESTINATION_DIR}...
+echo ${WP} plugin deactivate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${DESTINATION_DIR}
+${WP} plugin deactivate all-in-one-wp-migration-multisite-extension all-in-one-wp-migration --path=${DESTINATION_DIR}
+
+echo
+echo Removing temporary file ${BACKUP_DETAILS_FILE}...
+echo ${RM} -f ${BACKUP_DETAILS_FILE}
+${RM} -f ${BACKUP_DETAILS_FILE}
+
+echo
+echo ...done.
+echo
+exit 0

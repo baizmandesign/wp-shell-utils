@@ -1,0 +1,80 @@
+#!/usr/bin/env sh
+
+# Sync the files in the WP uploads directory on a remote server to a local directory. Works via rsync.
+# Note: this script requires WP alias definitions having the "path" property set.
+
+
+BASH_LIB=bash.lib
+
+. ${BASH_LIB}
+
+if [[ $# -ne 1 ]]
+then
+	 cat << EOF
+
+usage: ${SELF} <wp cli alias> [uploads directory]
+
+the following (production) wp cli aliases are available:
+EOF
+${WP} cli alias list | ${GREP} "prod" | ${GREP} "^@" | ${SED} 's/@//' | ${SED} 's/://' | ${SED} 's/^all .*/*all*/' | ${SORT} | ${COLUMN}
+
+exit
+fi
+
+REMOTE_WP_CLI_ALIAS=$1
+
+${WP} cli alias get @${REMOTE_WP_CLI_ALIAS} > /dev/null 2>&1
+if [[ $? -ne 0 ]]
+then
+	echo \"${REMOTE_WP_CLI_ALIAS}\" is not a valid WP CLI alias. Aborting...
+	exit 1
+fi
+
+REMOTE_HOST=$(${WP} cli alias get @${REMOTE_WP_CLI_ALIAS} | ${GREP} 'ssh:' | ${AWK} '{print $2}')
+REMOTE_PATH=$(${WP} cli alias get @${REMOTE_WP_CLI_ALIAS} | ${GREP} 'path:' | ${AWK} '{print $2}')
+
+if [[ ${REMOTE_HOST} == '' ]]
+then
+	echo \"${REMOTE_WP_CLI_ALIAS}\" has no SSH host. Aborting...
+	exit 2
+fi
+
+if [[ ${REMOTE_PATH} == '' ]]
+then
+	echo \"${REMOTE_WP_CLI_ALIAS}\" has no SSH remote path. Aborting...
+	exit 3
+fi
+
+UPLOADS_PATH=${2:-"uploads"}
+WP_CONTENT_PATH="wp-content"
+
+# get local alias info
+
+LOCAL_WP_CLI_ALIAS_PREFIX=$(echo ${REMOTE_WP_CLI_ALIAS} | ${AWK} -F"-" '{print $1}')
+LOCAL_WP_CLI_ALIAS="${LOCAL_WP_CLI_ALIAS_PREFIX}-${DOMAIN}"
+
+${WP} cli alias get @${LOCAL_WP_CLI_ALIAS} > /dev/null 2>&1
+if [[ $? -ne 0 ]]
+then
+	echo \"${LOCAL_WP_CLI_ALIAS}\" is not a valid WP CLI alias. Aborting...
+	exit 4
+fi
+
+LOCAL_PATH=$(${WP} cli alias get @${LOCAL_WP_CLI_ALIAS} | ${GREP} 'path:' | ${AWK} '{print $2}')
+
+echo Syncing uploads...
+echo ${RSYNC} -a --verbose --progress --rsh=ssh ${REMOTE_HOST}:${REMOTE_PATH}/${WP_CONTENT_PATH}/${UPLOADS_PATH}/ ${LOCAL_PATH}/${WP_CONTENT_PATH}/${UPLOADS_PATH}/
+${RSYNC} -a --verbose --progress --rsh=ssh ${REMOTE_HOST}:${REMOTE_PATH}/${WP_CONTENT_PATH}/${UPLOADS_PATH}/ ${LOCAL_PATH}/${WP_CONTENT_PATH}/${UPLOADS_PATH}/
+
+return_value=$?
+
+if [[ ${return_value} -ne 0 ]]
+then
+	echo
+	echo ERROR: ${RSYNC} failed.
+	echo
+	exit 5
+fi
+
+echo ...done
+echo

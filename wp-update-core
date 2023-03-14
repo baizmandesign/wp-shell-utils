@@ -1,0 +1,79 @@
+#!/usr/bin/env sh
+
+# This script requires All-in-One WP Migration and a commercial extension of the plugin, All-in-One WP Migration Multisite Extension.
+
+WEBSITES_DIR="" # directory where your websites live
+EXCLUSIONS="" # a space-separated list of folders to ignore
+BACKUP_PLUGINS="all-in-one-wp-migration-multisite-extension all-in-one-wp-migration"
+
+BASH_LIB=bash.lib
+
+. ${BASH_LIB}
+
+echo
+echo Searching for WordPress installations in ${WEBSITES_DIR}...
+
+for wp_site in $(${FIND} ${WEBSITES_DIR} -name "wp-config.php" -depth 2)
+do
+
+    wp_path=${wp_site%/*}
+    echo wp_path: ${wp_path}
+    echo
+
+    for excluded in ${EXCLUSIONS}
+    do
+        if [[ ${wp_path##*/} == ${excluded} ]]
+        then
+            echo ${excluded} has been excluded. Skipping...
+            echo
+            continue 2 # get out of this loop and in the parent loop, start the next iteration
+        fi
+    done
+
+    #continue # for debugging. stops the rest of the code from executing in this loop.
+
+    echo Checking current version of WordPress...
+    echo ${WP} --path=${wp_path} core version
+    ${WP} --path=${wp_path} core version
+    echo
+
+    echo Activating backup plugins...
+    echo ${WP} --path=${wp_path} plugin activate ${BACKUP_PLUGINS}
+    ${WP} --path=${wp_path} plugin activate ${BACKUP_PLUGINS}
+    echo
+
+    echo Updating backup plugins...
+    echo ${WP} --path=${wp_path} plugin update ${BACKUP_PLUGINS}
+    ${WP} --path=${wp_path} plugin update ${BACKUP_PLUGINS}
+    echo
+
+    echo Creating quick backup...
+    echo ${WP} --path=${wp_path} ${AI1WM} backup --exclude-spam-comments --exclude-post-revisions --exclude-media --exclude-themes --exclude-inactive-themes --exclude-muplugins --exclude-plugins --exclude-inactive-plugins --exclude-cache --exclude-email-replace
+    ${WP} --path=${wp_path} ${AI1WM} backup --exclude-spam-comments --exclude-post-revisions --exclude-media --exclude-themes --exclude-inactive-themes --exclude-muplugins --exclude-plugins --exclude-inactive-plugins --exclude-cache --exclude-email-replace
+    echo
+
+    echo Deactivating backup plugins...
+    echo ${WP} --path=${wp_path} plugin deactivate ${BACKUP_PLUGINS}
+    ${WP} --path=${wp_path} plugin deactivate ${BACKUP_PLUGINS}
+    echo
+
+    echo Updating WordPress...
+    echo ${WP} --path=${wp_path} core update
+    ${WP} --path=${wp_path} core update
+    echo
+
+    echo Updating WordPress database...
+    echo ${WP} --path=${wp_path} core update-db
+    ${WP} --path=${wp_path} core update-db
+    echo
+
+    echo Checking latest version of WordPress...
+    echo ${WP} --path=${wp_path} core version
+    ${WP} --path=${wp_path} core version
+    echo
+
+done
+
+echo
+echo ...done.
+echo

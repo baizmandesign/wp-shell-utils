@@ -1,0 +1,259 @@
+#!/usr/bin/env sh
+
+BASH_LIB=bash.lib
+
+. ${BASH_LIB}
+
+MYSQL_USER="root"
+MYSQL_PASS="${MYSQL_USER}"
+MYSQL_HOST="127.0.0.1"
+ADMIN_USER="saul"
+ADMIN_PASS=$(${MD5} -s ${RANDOM} | ${AWK} '{print $NF}') # $RANDOM is a special bash variable.
+ADMIN_EMAIL="YOUR EMAIL HERE"
+SITE_DOMAIN="${DOMAIN}"
+PLUGIN_DIRECTORY="${APACHE_DIR}/standard-wp-plugins"
+# The variable below can take the name of the plugin or reference to a zip file in ${PLUGIN_DIRECTORY}.
+PLUGINS="all-in-one-wp-migration query-monitor sucuri-scanner ${PLUGIN_DIRECTORY}/*.zip"
+MU_PLUGIN="${APACHE_DIR}/bzmndsgn-mu/bzmndsgn-mu.php"
+MU_PLUGINS_DIR="mu-plugins"
+BROWSER="Safari" #'Google Chrome'
+WP_CONFIG_SAMPLE="wp-config-sample.php"
+OP_VAULT="Personal"
+
+if [[ $# == 0 || $# > 3 ]]
+then
+     cat << EOF
+
+     	usage: ${SELF} <site-name>.${SITE_DOMAIN} [database-name] [version]
+
+EOF
+exit
+fi
+
+# set important variable values
+SITE_NAME="${1}"
+DATABASE_NAME="${2:-${SITE_NAME}}" # set to $SITE_NAME if undefined
+SITE_TITLE="${SITE_NAME}"
+WP_VERSION=${3:-"latest"} # set to latest if undefined
+
+# download requested version of wordpress
+echo Downloading WordPress \(version: ${WP_VERSION}\)...
+echo ${WP} core download --version=${WP_VERSION} --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} core download --version=${WP_VERSION} --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to download WordPress. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# note: there are some defaults set in ~/.wp-cli/config.yml that add extra constants to wp-config.php.
+echo Creating wp-config.php in \"${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}\"...
+echo ${WP} config create --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} --dbname=${DATABASE_NAME} --dbuser=${MYSQL_USER} --dbpass=${MYSQL_PASS} --dbhost=${MYSQL_HOST} --skip-check
+${WP} config create --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} --dbname=${DATABASE_NAME} --dbuser=${MYSQL_USER} --dbpass=${MYSQL_PASS} --dbhost=${MYSQL_HOST} --skip-check
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to create config file. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# create mysql database
+echo Creating database \"${DATABASE_NAME}\"...
+echo ${WP} db create --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} db create --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+# create-mysql-db $SITE_NAME
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to create database. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# install wordpress
+echo Installing WordPress...
+echo ${WP} core install --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} --url=https://${SITE_NAME}.${SITE_DOMAIN} --title=\"${SITE_TITLE}\" --admin_user=${ADMIN_USER} --admin_password=${ADMIN_PASS} --admin_email=${ADMIN_EMAIL} --skip-email
+${WP} core install --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} --url=https://${SITE_NAME}.${SITE_DOMAIN} --title="${SITE_TITLE}" --admin_user=${ADMIN_USER} --admin_password=${ADMIN_PASS} --admin_email=${ADMIN_EMAIL} --skip-email
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to install WordPress. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# delete sample config
+echo Deleting sample config \(${WP_CONFIG_SAMPLE}\)...
+echo ${RM} -f ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/${WP_CONFIG_SAMPLE}
+${RM} -f ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/${WP_CONFIG_SAMPLE}
+echo
+
+# install and activate my stock plugins
+echo Installing and activating stock plugins...
+echo ${WP} plugin install --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} ${PLUGINS} --activate
+${WP} plugin install --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} ${PLUGINS} --activate
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to install WordPress plugins. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# uninstall default wp plugins
+echo Deleting unused plugins...
+echo ${WP} plugin uninstall --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} akismet hello
+${WP} plugin uninstall --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN} akismet hello
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to uninstall WordPress plugins. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# update outdated plugins
+echo Updating outdated plugins...
+echo ${WP} plugin update --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} plugin update --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to update outdated plugins. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# install must-use plugin
+echo Installing must-use plugin...
+echo ${MKDIR} ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/wp-content/${MU_PLUGINS_DIR}
+${MKDIR} ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/wp-content/${MU_PLUGINS_DIR}
+echo ${LN} -s ${MU_PLUGIN} ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/wp-content/${MU_PLUGINS_DIR}/${MU_PLUGIN##*/}
+${LN} -s ${MU_PLUGIN} ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}/wp-content/${MU_PLUGINS_DIR}/${MU_PLUGIN##*/}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to install must-use plugin. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# update outdated themes
+echo Updating outdated themes...
+echo ${WP} theme update --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} theme update --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to update outdated themes. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# uninstall all themes but the active one
+echo Deleting unused themes...
+echo ${WP} theme delete --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} theme delete --all --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to delete unused WordPress themes. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# delete default pages, posts, comments, and taxonomy terms
+echo Deleting default page, post, and comment...
+echo ${WP} site empty --uploads --yes --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+${WP} site empty --uploads --yes --path=${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+
+if [[ $? != 0 ]]
+then
+     echo
+     echo Failed to delete default site content. Exiting. 
+     echo
+     exit 1
+fi
+
+echo ...done.
+echo
+
+# link site to valet and secure it
+echo Creating a virtual host and SSL certificate...
+cd ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+echo ${VALET} link --secure ${SITE_NAME}
+${VALET} link --secure ${SITE_NAME}
+echo ...done.
+echo
+cd - > /dev/null # return to previous directory
+
+echo Your site \"${SITE_NAME}\" is ready at https://${SITE_NAME}.${SITE_DOMAIN}.
+echo
+echo Username: ${ADMIN_USER}
+echo Password: ${ADMIN_PASS}
+echo URL: https://${SITE_NAME}.${SITE_DOMAIN}/wp-login.php
+echo
+
+# create wp cli aliases
+echo Bonus: aliases for wp cli \(append to \~/.wp-cli/config.yml\):
+echo 
+echo @${SITE_NAME}-${SITE_DOMAIN}:
+echo "     path:" ${APACHE_DIR}/${SITE_NAME}.${SITE_DOMAIN}
+echo
+echo @${SITE_NAME}-all:
+echo " - @${SITE_NAME}-${SITE_DOMAIN}"
+echo
+
+# add credentials to 1password
+# https://developer.1password.com/docs/cli/create-item
+echo Storing credentials in \"${OP_VAULT}\" vault of 1Password...
+echo ${ONE_PASSWORD} item create --category login --title \"${SITE_NAME} WordPress login\" --vault ${OP_VAULT} --url \"https://${SITE_NAME}.${SITE_DOMAIN}/wp-login.php\" \"password=${ADMIN_PASS}\" \"username=${ADMIN_USER}\" 
+${ONE_PASSWORD} item create --category login --title "${SITE_NAME} WordPress login" --vault ${OP_VAULT} --url "https://${SITE_NAME}.${SITE_DOMAIN}/wp-login.php" "password=${ADMIN_PASS}" "username=${ADMIN_USER}" 
+echo
+
+#echo open -a $BROWSER https://${SITE_NAME}.${SITE_DOMAIN}
+#echo
+#open -a $BROWSER "https://${SITE_NAME}.${SITE_DOMAIN}"

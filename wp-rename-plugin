@@ -1,0 +1,63 @@
+#!/usr/bin/env sh
+
+SELF=${0##*/}
+
+if [[ $# != 2 ]]
+then
+	cat << EOF
+
+usage: ${SELF} <old directory> <new directory>
+
+EOF
+exit
+fi
+
+OLD_FOLDER_NAME=${1}
+NEW_FOLDER_NAME=${2}
+WP=$(which wp)
+MV=$(which mv)
+
+if [[ ${WP} == '' ]]
+then
+	echo
+	echo WP CLI \(https://wp-cli.org\) is not installed. Aborting...
+	echo
+	exit 3
+fi
+
+if [[ ! -d "${OLD_FOLDER_NAME}" ]]
+then
+	echo
+	echo The folder \"${OLD_FOLDER_NAME}\" does not exist. Aborting...
+	echo
+	exit 1
+fi
+
+if [[ -d "${NEW_FOLDER_NAME}" ]]
+then
+	echo
+	echo The destination folder \"${NEW_FOLDER_NAME}\" exists. Aborting...
+	echo
+	exit 2
+fi
+
+table_prefix=$(${WP} config get table_prefix)
+
+echo Backing up database...
+echo ${WP} db export
+${WP} db export
+echo
+
+echo Renaming folder...
+echo ${MV} ${OLD_FOLDER_NAME} ${NEW_FOLDER_NAME}
+${MV} ${OLD_FOLDER_NAME} ${NEW_FOLDER_NAME}
+echo
+
+# https://wordpress.stackexchange.com/questions/267245/how-to-update-an-array-option-using-wp-cli
+echo Updating ${table_prefix}options...
+echo ${WP} option get active_plugins --format=json \| sed \"s/${OLD_FOLDER_NAME}/${NEW_FOLDER_NAME}/\" \| ${WP} option set active_plugins --format=json
+${WP} option get active_plugins --format=json | sed "s/${OLD_FOLDER_NAME}/${NEW_FOLDER_NAME}/" | ${WP} option set active_plugins --format=json
+echo
+
+echo ...done.
+echo

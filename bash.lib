@@ -1,0 +1,77 @@
+# Programs.
+
+FIND=$(which find)
+
+ECHO=$(which echo)
+
+LN=$(which ln)
+
+RM=$(which rm)
+
+WP=$(which wp)
+
+SCP=$(which scp)
+
+SSH=$(which ssh)
+
+PHP=$(which php)
+
+GREP=$(which grep)
+
+AWK=$(which awk)
+
+MD5=$(which md5)
+
+GIT=$(which git)
+
+MKDIR=$(which mkdir)
+
+SUDO=$(which sudo)
+
+TEE=$(which tee)
+
+SLEEP=$(which sleep)
+
+CAT=$(which cat)
+
+SED=$(which sed)
+
+OPEN=$(which open)
+
+CHMOD=$(which chmod)
+
+RSYNC=$(which rsync)
+
+DATE=$(which date)
+
+VALET=$(which valet)
+
+WGET=$(which wget)
+
+TAR=$(which tar)
+
+ONE_PASSWORD=$(which op)
+
+SORT=$(which sort)
+
+COLUMN=$(which column)
+
+# Variables.
+
+SELF=${0##*/}                       # program name
+
+WWW_DIR=~/Documents/apache_sites    # parent directory of websites
+
+APACHE_DIR=${WWW_DIR}               # parent directory of apache websites
+
+AI1WM=ai1wm                         # wp cli command name
+
+TMP_DIR=/tmp                        # tmp directory
+
+LOCALHOST=127.0.0.1                 # localhost ip address
+
+MAMP_DIR="/Applications/MAMP"       # MAMP directory
+
+LOGFILE=debug.log                   # logfile
+
+DOMAIN=test                         # localhost web domain

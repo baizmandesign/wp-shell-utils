@@ -1,0 +1,208 @@
+#!/usr/bin/env sh
+
+BASH_LIB=bash.lib
+
+. ${BASH_LIB}
+
+if [[ $# != 2 && $# != 3 ]]
+then
+     cat << EOF
+
+This program creates a backup of a remote site and restores it to a local site.
+
+usage: ${SELF} <remote host> <remote directory> [local apache directory]
+
+The base of the [local apache directory] is ${WWW_DIR}.
+
+If the local path is omitted, it is assumed to be \${REMOTE_PATH%%.*}.${DOMAIN}. E.g., "whatever.example.org" will be "whatever.${DOMAIN}".
+
+EOF
+exit 1
+fi
+
+TMP=/tmp/.wp-remote-copy.$$.txt
+TOOLSET_SITE_KEYS=~/.toolset-site-keys # For toolset.com plugins.
+BACKUP_PLUGINS="all-in-one-wp-migration-multisite-extension all-in-one-wp-migration"
+BACKUP_ARGS="--exclude-spam-comments --exclude-post-revisions --exclude-media --exclude-themes --exclude-inactive-themes --exclude-muplugins --exclude-plugins --exclude-inactive-plugins --exclude-cache --exclude-email-replace"
+
+REMOTE_PATH=$2
+if [[ $# == 3 ]]
+then
+     LOCAL_SUBDIR=$3
+else
+     LOCAL_SUBDIR=${REMOTE_PATH%%.*}.${DOMAIN}
+fi
+LOCAL_PATH=${APACHE_DIR}/${LOCAL_SUBDIR}
+REMOTE_HOST=$1
+AI1WM_BACKUPS_DIR=wp-content/ai1wm-backups
+
+# does local directory exist?
+if [[ ! -d ${LOCAL_PATH} ]]
+then
+     echo
+     echo The local directory \"${LOCAL_PATH}\" does not exit. Aborting...
+     echo
+     exit 2
+fi
+
+
+# does the server exist as an ssh host?
+
+# does the remote directory exist?
+# does the remote directory contain a wordpress installation?
+${SSH} ${REMOTE_HOST} ls -l ${REMOTE_PATH}/wp-config.php > /dev/null
+remote_check_return_value=$?
+
+if [[ ${remote_check_return_value} -ne 0 ]]
+then
+     echo
+     echo The remote folder \"${REMOTE_PATH}\" may not exist, or there isn\'t a WordPress installation in it. Aborting...
+     echo
+     exit 3
+fi
+
+echo
+
+echo Populating a copy of ${REMOTE_PATH} from remote host ${REMOTE_HOST} in ${LOCAL_PATH}...
+
+echo
+echo Activating All-in-One plugins on ${REMOTE_PATH}...
+echo
+
+echo ${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} plugin activate ${BACKUP_PLUGINS}
+${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} plugin activate ${BACKUP_PLUGINS}
+
+echo
+echo Backing up ${REMOTE_HOST}:${REMOTE_PATH}...
+echo
+
+# run the backup command...
+echo ${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} ${AI1WM} backup ${BACKUP_ARGS} \> ${TMP}
+${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} ${AI1WM} backup ${BACKUP_ARGS} > ${TMP}
+
+echo
+echo Deactivating All-in-One plugins on ${REMOTE_PATH}...
+echo
+
+echo ${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} plugin deactivate ${BACKUP_PLUGINS}
+${WP} --ssh=${REMOTE_HOST} --path=${REMOTE_PATH} plugin deactivate ${BACKUP_PLUGINS}
+
+# get full path to backup filename.
+backup_file=$(tail -1 ${TMP} | awk -F': ' '{print $NF}')
+
+# the backup failed. the multisite extension may not be the latest version, or some other failure may have occurred.
+if [[ ${backup_file} == "Backup in progress..." ]]
+then
+     echo
+     echo A backup on ${REMOTE_HOST} was not created. Is the multisite extension up-to-date\? Aborting...
+     echo
+     exit 6
+fi
+
+echo Backup file: ${backup_file}
+
+echo
+echo Copying ${backup_file##*/} to $(hostname)...
+echo
+
+echo ${SCP} ${REMOTE_HOST}:${backup_file} ${LOCAL_PATH}/${AI1WM_BACKUPS_DIR}/
+${SCP} ${REMOTE_HOST}:${backup_file} ${LOCAL_PATH}/${AI1WM_BACKUPS_DIR}/
+scp_return_value=$?
+
+if [[ ${scp_return_value} -ne 0 ]]
+then
+     echo
+     echo The secure copy of \"${backup_file##*/}\" to \"${LOCAL_PATH}/${AI1WM_BACKUPS_DIR}\" failed. Aborting...
+     echo
+     exit 4
+fi
+
+echo
+echo Activating All-in-One plugins on ${LOCAL_PATH}...
+echo
+
+echo ${WP} --path=${LOCAL_PATH} plugin activate ${BACKUP_PLUGINS}
+${WP} --path=${LOCAL_PATH} plugin activate ${BACKUP_PLUGINS}
+
+# check if command is available?
+#echo
+#echo Forcing backup plugin update check...
+#echo
+#
+#echo ${WP} --path=${LOCAL_PATH} ${AI1WM} force-update-check
+#${WP} --path=${LOCAL_PATH} ${AI1WM} force-update-check
+
+#if [[ $? == 1 ]]
+#then
+#     echo
+#     echo Warning: could not force backup plugin update check.
+#     echo
+#fi
+
+#echo
+#echo Updating the All-in-One plugins on ${LOCAL_PATH}...
+#echo
+#
+#echo ${WP} --path=${LOCAL_PATH} plugin update ${BACKUP_PLUGINS}
+#${WP} --path=${LOCAL_PATH} plugin update ${BACKUP_PLUGINS}
+
+echo
+echo Backing up ${LOCAL_PATH} before overwriting it...
+echo
+
+# make a backup before everything gets blown away...
+echo ${WP} --path=${LOCAL_PATH} ${AI1WM} backup ${BACKUP_ARGS} \> /dev/null
+${WP} --path=${LOCAL_PATH} ${AI1WM} backup ${BACKUP_ARGS} > /dev/null
+
+echo
+echo Restoring ${LOCAL_SUBDIR} from \"${backup_file##*/}\"...
+echo
+
+# restore backup
+echo ${WP} --path=${LOCAL_PATH} ${AI1WM} restore --yes ${backup_file##*/}
+${WP} --path=${LOCAL_PATH} ${AI1WM} restore --yes ${backup_file##*/}
+wp_restore_return_value=$?
+
+if [[ ${wp_restore_return_value} -ne 0 ]]
+then
+     echo
+     echo The restoration of \"${backup_file##*/}\" failed. Aborting...
+     echo
+     exit 5
+fi
+
+# register toolset, if needed
+# toolset can be registered via a constant in wp-config.php:
+# https://toolset.com/faq/how-to-install-and-register-toolset/#automatic-toolset-registration-using-php
+# define( 'OTGS_INSTALLER_SITE_KEY_TOOLSET', 'your-site-key' );
+
+# get site domain name
+site_url=$(${WP} --path=${LOCAL_PATH} option get siteurl | ${AWK} -F '//' '{print $2}')
+# check if the domain exists in the list of toolset domains
+toolset_site_key=$(${GREP} ${site_url} ${TOOLSET_SITE_KEYS} | ${AWK} '{print $2}')
+
+# if the key exists in the list of toolset domains, print reminder to add the constant to wp-config.php.
+if [[ ${toolset_site_key} != "" ]]
+then
+     echo
+     echo Register Toolset, if needed, by adding the line below to ${LOCAL_PATH}/wp-config.php:
+     echo "define( 'OTGS_INSTALLER_SITE_KEY_TOOLSET', '${toolset_site_key}' );"
+fi
+
+echo
+echo Deactivating All-in-One plugins on ${LOCAL_PATH}...
+echo
+
+echo ${WP} --path=${LOCAL_PATH} plugin deactivate ${BACKUP_PLUGINS}
+${WP} --path=${LOCAL_PATH} plugin deactivate ${BACKUP_PLUGINS}
+
+echo
+
+echo ${RM} -f ${TMP}
+${RM} -f ${TMP}
+
+echo
+echo ...done.
+echo
+
+exit 0
